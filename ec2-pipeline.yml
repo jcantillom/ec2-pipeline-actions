@@ -1,0 +1,67 @@
+name: EC2 Management Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Acción a realizar: start o stop'
+        required: true
+        default: 'start'
+      instance_ids:
+        description: 'IDs de las instancias EC2 (separadas por comas)'
+        required: true
+      schedule:
+        description: '¿Programar como scheduler? (yes/no)'
+        required: false
+        default: 'no'
+
+
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  manage-ec2:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Configurar AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+
+      - name: Validar entrada del usuario
+        run: |
+          echo "Validando entradas..."
+          if [[ "${{ github.event.inputs.action }}" != "start" && "${{ github.event.inputs.action }}" != "stop" ]]; then
+            echo "Error: La acción debe ser 'start' o 'stop'."
+            exit 1
+          fi
+          if [[ -z "${{ github.event.inputs.instance_ids }}" ]]; then
+            echo "Error: Debes proporcionar al menos un ID de instancia EC2."
+            exit 1
+          fi
+
+
+      - name: Gestionar instancias EC2
+        run: |
+          ACTION=${{ github.event.inputs.action }}
+          INSTANCE_IDS=${{ github.event.inputs.instance_ids }}
+
+          echo "Ejecutando acción '${ACTION}' en instancias: ${INSTANCE_IDS}"
+
+          if [[ "$ACTION" == "start" ]]; then
+            aws ec2 start-instances --instance-ids $INSTANCE_IDS
+          elif [[ "$ACTION" == "stop" ]]; then
+            aws ec2 stop-instances --instance-ids $INSTANCE_IDS
+          fi
+
+
+      - name: Confirmar resultado
+        run: |
+          echo "Verificando estado de las instancias..."
+          aws ec2 describe-instances --instance-ids ${{ github.event.inputs.instance_ids }} \
+            --query "Reservations[].Instances[].State.Name"
